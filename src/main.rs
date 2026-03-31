@@ -263,17 +263,28 @@ fn verify_svix_signature(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
-    if (now - ts).abs() > 300 {
+    // Use checked arithmetic: a crafted large-negative timestamp would cause
+    // `now - ts` to overflow i64 and wrap to a small value, bypassing the
+    // replay-protection window. Treat overflow as rejection.
+    let diff = match now.checked_sub(ts) {
+        Some(d) => d.saturating_abs(),
+        None => return false,
+    };
+    if diff > 300 {
         return false;
     }
 
-    let mut mac = HmacSha256::new_from_slice(&key).expect("HMAC accepts any key size");
-    mac.update(format!("{msg_id}.{timestamp}.").as_bytes());
-    mac.update(body);
-    let expected = STANDARD.encode(mac.finalize().into_bytes());
-
+    // Use constant-time verify_slice for each candidate signature to prevent
+    // timing side-channel attacks. A fresh MAC instance is created per token
+    // so that verify_slice (which consumes the instance) can be reused.
     signatures
         .split_whitespace()
         .filter_map(|tok| tok.strip_prefix("v1,"))
-        .any(|sig| sig == expected)
+        .filter_map(|sig| STANDARD.decode(sig).ok())
+        .any(|sig_bytes| {
+            let mut mac = HmacSha256::new_from_slice(&key).expect("HMAC accepts any key size");
+            mac.update(format!("{msg_id}.{timestamp}.").as_bytes());
+            mac.update(body);
+            mac.verify_slice(&sig_bytes).is_ok()
+        })
 }
