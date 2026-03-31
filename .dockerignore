@@ -1,0 +1,4 @@
+src/target/
+.git/
+*.md
+docker-compose.yml

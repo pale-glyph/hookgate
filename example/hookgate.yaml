@@ -1,0 +1,20 @@
+bind: "0.0.0.0:3000"
+redis_url: "redis://127.0.0.1:6379"
+
+hooks:
+  - source: /webhooks/clerk
+    stream: clerk_stream
+    secret: "your-webhook-secret-here"   # optional; enables HMAC-SHA256 verification
+
+  - source: /webhooks/github
+    stream: github_stream
+    secret: "another-secret"
+
+  - source: /webhooks/stripe
+    stream: stripe_stream
+    # no secret = no signature check (not recommended for production)
+
+  - source: /webhooks/svix
+    stream: svix_stream
+    scheme: svix
+    secret: "whsec_your-svix-signing-secret-here"   # from the Svix dashboard; may include the whsec_ prefix
