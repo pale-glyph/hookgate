@@ -65,6 +65,8 @@ struct RouteEntry {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    println!("hookgate starting up...");
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -72,22 +74,21 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    info!("hookgate starting");
-
+    
     let config_path =
         std::env::var("HOOKGATE_CONFIG").unwrap_or_else(|_| "hookgate.yaml".to_string());
     let config_str = fs::read_to_string(&config_path)
         .with_context(|| format!("Failed to read config file: {config_path}"))?;
     let config: Config =
         serde_yaml::from_str(&config_str).context("Failed to parse config file")?;
-    info!("Configuration loaded");
+    println!("Configuration loaded from {}", config_path);
 
     let redis_client =
         redis::Client::open(config.redis_url.as_str()).context("Invalid Redis URL")?;
     let redis_mgr = redis::aio::ConnectionManager::new(redis_client)
         .await
         .context("Failed to connect to Redis")?;
-    info!("Connected to Redis");
+    println!("Connected to Redis at {}", config.redis_url);
 
     let routes: HashMap<String, RouteEntry> = config
         .hooks
@@ -104,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .collect();
 
-    info!("Registered {} webhook route(s)", routes.len());
+    println!("Registered {} webhook route(s)", routes.len());
 
     let state = AppState {
         redis: redis_mgr,
@@ -120,10 +121,11 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&config.bind)
         .await
         .with_context(|| format!("Failed to bind to {}", config.bind))?;
-    info!("Listening on {}", config.bind);
-    info!("Ready to accept webhook requests");
+    println!("Listening on {}", config.bind);
+    println!("Ready to accept webhook requests");
     axum::serve(listener, app).await?;
 
+    println!("hookgate shutting down");
     Ok(())
 }
 
@@ -210,8 +212,8 @@ async fn webhook_handler(
             info!("Webhook received and forwarded");
             StatusCode::OK
         }
-        Err(_) => {
-            error!("Failed to forward webhook message");
+        Err(e) => {
+            error!("Failed to forward webhook message: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
